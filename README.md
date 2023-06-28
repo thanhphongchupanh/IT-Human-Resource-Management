@@ -6,6 +6,9 @@ The employee management system will provide a comprehensive platform to manage i
 ## I. Import set up file to use this project (Setup folder is above)
 - You need to import nbproject to be able to use your project
 - You need to import all libraries while opening the project source code
+
+## II. Excecute database
+- File database "ITHR-Management.sql" is include above
 - All triggers must be executed in your database to run the correct logic of the app
 
 ## Screen-shots
