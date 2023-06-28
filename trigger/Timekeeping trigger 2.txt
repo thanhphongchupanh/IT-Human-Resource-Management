@@ -1,0 +1,55 @@
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TRIGGER [dbo].[update_timekeeping_status]
+ON [dbo].[timekeeping]
+INSTEAD OF INSERT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    DECLARE @dayleave_status INT;
+    
+    -- Lấy giá trị status từ bảng dayleave
+    SELECT @dayleave_status = status FROM Dayleave WHERE dayleave_id = (SELECT dayleave_id FROM inserted);
+    
+    IF (SELECT time_in FROM inserted) IS NULL AND (SELECT time_out FROM inserted) IS NULL
+    BEGIN
+        IF (@dayleave_status = 1)
+        BEGIN
+            INSERT INTO timekeeping (timekeeping_id, employee_id, date, time_in, time_out, status, report_id, dayleave_id)
+            VALUES ((SELECT timekeeping_id FROM inserted), (SELECT employee_id FROM inserted), (SELECT date FROM inserted), (SELECT time_in FROM inserted), (SELECT time_out FROM inserted), 'absent with permission', (SELECT report_id FROM inserted), (SELECT dayleave_id FROM inserted));
+        END
+        ELSE
+        BEGIN
+            INSERT INTO timekeeping (timekeeping_id, employee_id, date, time_in, time_out, status, report_id, dayleave_id)
+            VALUES ((SELECT timekeeping_id FROM inserted), (SELECT employee_id FROM inserted), (SELECT date FROM inserted), (SELECT time_in FROM inserted), (SELECT time_out FROM inserted), 'absent without permission', (SELECT report_id FROM inserted), (SELECT dayleave_id FROM inserted));
+        END
+    END
+    ELSE
+    BEGIN
+        DECLARE @time_in TIME;
+        DECLARE @time_out TIME;
+        
+        SET @time_in = (SELECT time_in FROM inserted);
+        SET @time_out = (SELECT time_out FROM inserted);
+        
+        IF @time_in = '09:00:00' and DATEDIFF(HOUR, @time_in, @time_out) =8
+        BEGIN
+            INSERT INTO timekeeping (timekeeping_id, employee_id, date, time_in, time_out, status, report_id, dayleave_id)
+VALUES ((SELECT timekeeping_id FROM inserted), (SELECT employee_id FROM inserted), (SELECT date FROM inserted), (SELECT time_in FROM inserted), (SELECT time_out FROM inserted), 'on time', (SELECT report_id FROM inserted), (SELECT dayleave_id FROM inserted));
+ (SELECT dayleave_id FROM inserted);
+        END
+        ELSE IF @time_in >= '09:00:00' and DATEDIFF(HOUR, @time_in, @time_out) >=9
+        BEGIN
+            INSERT INTO timekeeping (timekeeping_id, employee_id, date, time_in, time_out, status, report_id, dayleave_id)
+            VALUES ((SELECT timekeeping_id FROM inserted), (SELECT employee_id FROM inserted), (SELECT date FROM inserted), (SELECT time_in FROM inserted), (SELECT time_out FROM inserted), 'overtime', (SELECT report_id FROM inserted), (SELECT dayleave_id FROM inserted));
+        END
+       ELSE IF @time_in > '09:00:00' and  DATEDIFF(HOUR, @time_in, @time_out) <= 8
+        BEGIN
+            INSERT INTO timekeeping (timekeeping_id, employee_id, date, time_in, time_out, status, report_id, dayleave_id)
+            VALUES ((SELECT timekeeping_id FROM inserted), (SELECT employee_id FROM inserted), (SELECT date FROM inserted), (SELECT time_in FROM inserted), (SELECT time_out FROM inserted), 'late', (SELECT report_id FROM inserted), (SELECT dayleave_id FROM inserted));
+        END
+    END
+END;

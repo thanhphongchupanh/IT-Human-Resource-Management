@@ -1,0 +1,35 @@
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TRIGGER [dbo].[add_salary_on_report_completion]
+ON [dbo].[Report]
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Kiểm tra các cột 'status' của các hàng được cập nhật
+    IF UPDATE(status)
+    BEGIN
+        -- Kiểm tra báo cáo đã hoàn thành (status = 'completed')
+        IF EXISTS (SELECT * FROM inserted WHERE status = 'completed')
+        BEGIN
+            -- Chèn dữ liệu vào bảng Salary cho các báo cáo hoàn thành
+            INSERT INTO salary (salary_id, month, year, employee_id, report_id)
+            SELECT LEFT(CONVERT(VARCHAR(40), NEWID()), 5),
+                    inserted.month,
+                    inserted.year,
+                    inserted.employee_id,
+                    inserted.report_id
+            FROM inserted
+            WHERE status = 'completed'
+                AND NOT EXISTS (
+                    SELECT * FROM salary
+                    WHERE month = inserted.month
+                        AND year = inserted.year
+                        AND employee_id = inserted.employee_id
+                );
+        END
+    END
+END;

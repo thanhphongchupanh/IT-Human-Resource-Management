@@ -1,0 +1,76 @@
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TRIGGER [dbo].[update_report_and_salary]
+ON [dbo].[timekeeping]
+AFTER INSERT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @report_id INT;
+    DECLARE @late_days_count INT;
+    DECLARE @overtime_days_count INT;
+    DECLARE @absent_with_permission_count INT;
+    DECLARE @absent_without_permission_count INT;
+    DECLARE @end_of_month DATE;
+
+    -- Lấy report_id từ bảng Report
+    SELECT @report_id = report_id FROM Report WHERE employee_id = (SELECT employee_id FROM inserted) AND month = MONTH((SELECT date FROM inserted)) AND year = YEAR((SELECT date FROM inserted));
+
+    -- Lấy ngày cuối cùng của tháng từ dữ liệu trong bảng timekeeping
+    SET @end_of_month = DATEADD(DAY, -1, DATEADD(MONTH, DATEDIFF(MONTH, 0, (SELECT date FROM inserted)) + 1, 0));
+
+    -- Đếm số ngày trễ, số ngày làm thêm giờ, số ngày vắng mặt có phép và số ngày vắng mặt không phép
+    SELECT @late_days_count = COUNT(*) FROM timekeeping WHERE report_id = @report_id AND status = 'late' AND date <= @end_of_month;
+    SELECT @overtime_days_count = COUNT(*) FROM timekeeping WHERE report_id = @report_id AND status = 'overtime' AND date <= @end_of_month;
+    SELECT @absent_with_permission_count = COUNT(*) FROM timekeeping WHERE report_id = @report_id AND status = 'absent with permission' AND date <= @end_of_month;
+    SELECT @absent_without_permission_count = COUNT(*) FROM timekeeping WHERE report_id = @report_id AND status = 'absent without permission' AND date <= @end_of_month;
+
+    -- Cập nhật bảng Report
+    UPDATE Report SET
+        late_day = @late_days_count,
+        overtime_day = @overtime_days_count,
+        excused_absent_day = @absent_with_permission_count,
+        absent_day = @absent_without_permission_count
+    WHERE report_id = @report_id;
+
+    -- Kiểm tra xem báo cáo đã kết thúc cho tháng đó hay chưa
+    DECLARE @is_report_ended INT;
+    SELECT @is_report_ended = CASE WHEN status = 'completed' THEN 1 ELSE 0 END FROM Report WHERE report_id = @report_id;
+
+    -- Kiểm tra xem đã tồn tại dữ liệu trong bảng Salary cho tháng và nhân viên tương ứng chưa
+    IF @is_report_ended = 1
+    BEGIN
+        -- Lấy thông tin từ bảng Report để chèn vào bảng Salary
+        DECLARE @month INT;
+        DECLARE @year INT;
+        DECLARE @employee_id VARCHAR(10);
+        SELECT @month = month, @year = year, @employee_id = employee_id FROM Report WHERE report_id = @report_id;
+
+        -- Kiểm tra xem đã tồn tại hàng trong bảng Salary cho tháng và nhân viên tương ứng chưa
+        IF NOT EXISTS (SELECT * FROM salary WHERE month = @month AND year = @year AND employee_id = @employee_id)
+        BEGIN
+            -- Chèn dữ liệu vào bảng Salary
+            INSERT INTO salary (salary_id, month, year, employee_id, report_id)
+            SELECT LEFT(CONVERT(VARCHAR(40), NEWID()), 5),
+                    @month,
+                    @year,
+                    @employee_id,
+                    @report_id;
+        END
+    END
+
+    -- Kiểm tra xem ngày cuối tháng đã có trong bảng timekeeping hay chưa
+    IF EXISTS (SELECT * FROM timekeeping WHERE report_id = @report_id AND date = @end_of_month)
+    BEGIN
+        UPDATE Report SET status = 'completed' WHERE report_id = @report_id;
+    END
+    ELSE
+    BEGIN
+        -- Update status của report thành 'not completed' nếu chưa kết thúc tháng ở timekeeping
+        UPDATE Report SET status = 'not completed' WHERE report_id = @report_id;
+    END
+END;
