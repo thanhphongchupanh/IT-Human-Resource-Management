@@ -1,0 +1,77 @@
+/****** Object:  Trigger [dbo].[InsertEmployeeAndUser]    Script Date: 7/4/2023 6:37:23 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TRIGGER [dbo].[InsertEmployeeAndUser]
+ON [dbo].[Applicant]
+AFTER UPDATE
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  IF (SELECT status FROM inserted) = 1
+  BEGIN
+    DECLARE @employee_id varchar(10);
+    DECLARE @username nvarchar(30);
+    DECLARE @password nvarchar(30) = '123';
+    DECLARE @roleName nvarchar(30) = 'STAFF';
+    DECLARE @status bit = 1;
+
+    -- Get the existing applicant data
+    DECLARE @applicant_id nvarchar(50);
+    DECLARE @name nvarchar(30);
+    DECLARE @phoneNumber int;
+    DECLARE @email nvarchar(50);
+	 DECLARE @gender bit;
+    DECLARE @dob date;
+	DECLARE @address nvarchar(30);
+    DECLARE @age int;
+    DECLARE @department_id nvarchar(10);
+    
+    SELECT TOP 1
+      @applicant_id = Applicant_id,
+      @name = name,
+      @phoneNumber = phoneNumer,
+      @email = email,
+	  @gender=gender,
+	  @address= Address,
+      @dob = dob,
+      @age = age,
+      @department_id = department_id
+    FROM Applicant
+    WHERE Applicant_id IN (SELECT Applicant_id FROM inserted);
+
+    -- Generate employee_id using department_id and random number
+    DECLARE @random_number int = (ABS(CHECKSUM(NEWID())) % 900) + 100;
+    SET @employee_id = @department_id + RIGHT('000' + CAST(@random_number AS varchar(3)), 3);
+	
+	DECLARE @supervison_id nvarchar(10);
+SET @supervison_id = (
+    SELECT u.employee_id
+    FROM [User] u
+    JOIN employee e ON u.employee_id = e.employee_id
+
+    WHERE u.roleName = 'LEADER'
+      AND e.department_id = @department_id
+);
+
+
+				
+    -- Insert into employee table
+    INSERT INTO employee (employee_id, employee_name, department_id, employee_dob, employee_phone, datejoin, age, gender, supervison_id, employee_email, employee_address, employee_photo)
+    VALUES (@employee_id, @name, @department_id, @dob, CAST(@phoneNumber AS nvarchar(11)), GETDATE(), @age,@gender, @supervison_id, @email, @address, NULL);
+
+    -- Insert into User table
+    SET @username = SUBSTRING(@email, 1, CHARINDEX('@', @email) - 1);
+    INSERT INTO [User] (employee_id, username, password, roleName, status)
+    VALUES (@employee_id, @username, @password, @roleName, @status);
+  END;
+END;
+GO
+
+ALTER TABLE [dbo].[Applicant] ENABLE TRIGGER [InsertEmployeeAndUser]
+GO
+
